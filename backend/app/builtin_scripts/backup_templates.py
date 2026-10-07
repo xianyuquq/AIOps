@@ -26,6 +26,54 @@ _PURGE = (
     'find {{dir}} -maxdepth 1 -type f -name "{{name}}_*" -mtime +{{retention}} -print -delete'
 )
 
+# 产物校验：备份「成功」但文件是空的，是容灾里最致命的情况——
+# 出事时才发现没有可恢复的数据。
+#
+# 实测踩到过：`mysqldump ... | gzip > out.gz` 里 mysqldump 报错退出，
+# 但 gzip 对空输入照样成功，于是退出码 0、gzip -t 也通过，
+# 平台把这次执行记为 success，产物却只有 20 字节（空 gzip 包）。
+# 根因是 **set -e 不捕获管道左侧的失败**。
+#
+# 因此这里做了两件事：
+#   1. set -o pipefail —— 管道任一环节失败即整体失败
+#   2. 显式的产物体检 —— 非空、大小合理、解压后有内容
+_VERIFY_ARTIFACT = r"""# ---- 备份产物体检（防止「成功但为空」）----
+[ -s "$OUT" ] || { echo "备份产物不存在或为空：$OUT" >&2; exit 1; }
+SIZE=$(wc -c < "$OUT" | tr -d ' ')
+if [ "$SIZE" -lt __MIN_SIZE__ ]; then
+  echo "备份产物过小（${SIZE} 字节，低于 __MIN_SIZE__ 字节），判定为失败" >&2
+  exit 1
+fi
+__CONTENT_CHECK__
+echo "BACKUP_VERIFIED size=${SIZE}"
+"""
+
+# 文本型产物（如 gzip 过的 SQL）才做「解压后有内容」检查。
+#
+# 二进制归档（-Fc 的 .dump）**不能**这么做：
+# 实测中它把一份 922KB 的有效金仓归档判成了失败 ——
+# dump 前 64 字节是不可打印的二进制，`grep -q .` 匹配不上。
+# 那类产物的有效性由 `sys_restore -l` / `pg_restore -l` 负责校验，更准确。
+_CONTENT_CHECK_TEXT = (
+    'if ! __DECOMPRESS__ | head -c 64 | grep -aq .; then\n'
+    '  echo "备份产物解压后为空，判定为失败" >&2\n'
+    "  exit 1\n"
+    "fi"
+)
+
+# gzip 类产物的最小合理字节数（空 gzip 包约 20 字节）
+_MIN_GZ = 512
+# 自定义格式归档（-Fc）空库也有几百字节，给一个保守下限
+_MIN_DUMP = 512
+
+
+def _pipefail_head() -> str:
+    """set -e 之外再加 pipefail。
+
+    不加的话 `失败的命令 | gzip > out` 会被当成成功，见 _VERIFY_ARTIFACT 的说明。
+    """
+    return "set -e\nset -o pipefail"
+
 # 备份工具解析器。
 # 为什么要这一步：mysqldump / pg_dump / sys_dump 通常**不在 SSH 会话的 PATH** 中
 # （实测麒麟机器上金仓装在 /data/Kingbase/ES/*/KESRealPro/*/Server/bin，
@@ -64,7 +112,18 @@ _MYSQL_RESOLVER = _resolver({"DUMP": "mysqldump"})
 _PG_RESOLVER = _resolver({"DUMP": "pg_dump"})
 _KB_RESOLVER = _resolver({"SYSDUMP": "sys_dump", "SYSRESTORE": "sys_restore"})
 
-_MYSQL_LOGICAL = f"""set -e
+# 两类产物各自的体检片段
+_VERIFY_GZIP = (
+    _VERIFY_ARTIFACT.replace("__MIN_SIZE__", str(_MIN_GZ))
+    .replace("__CONTENT_CHECK__", _CONTENT_CHECK_TEXT)
+    .replace("__DECOMPRESS__", 'gzip -dc "$OUT"')
+)
+# 二进制归档只查大小，内容有效性交给 restore -l
+_VERIFY_ARCHIVE = _VERIFY_ARTIFACT.replace("__MIN_SIZE__", str(_MIN_DUMP)).replace(
+    "__CONTENT_CHECK__", ""
+)
+
+_MYSQL_LOGICAL = f"""{_pipefail_head()}
 {_PREP}
 {_MYSQL_RESOLVER}
 STAMP={{{{stamp}}}}
@@ -77,10 +136,11 @@ OUT={{{{dir}}}}/{{{{name}}}}_${{STAMP}}.sql.gz
 echo "BACKUP_FILE=$OUT"
 ls -lh "$OUT"
 gzip -t "$OUT" && echo "GZIP_OK"
+{_VERIFY_GZIP}
 {_PURGE}
 """
 
-_PG_LOGICAL = f"""set -e
+_PG_LOGICAL = f"""{_pipefail_head()}
 {_PREP}
 {_PG_RESOLVER}
 STAMP={{{{stamp}}}}
@@ -90,10 +150,11 @@ OUT={{{{dir}}}}/{{{{name}}}}_${{STAMP}}.dump
   -Fc -f "$OUT"
 echo "BACKUP_FILE=$OUT"
 ls -lh "$OUT"
+{_VERIFY_ARCHIVE}
 {_PURGE}
 """
 
-_KINGBASE_LOGICAL = f"""set -e
+_KINGBASE_LOGICAL = f"""{_pipefail_head()}
 {_PREP}
 {_KB_RESOLVER}
 STAMP={{{{stamp}}}}
@@ -109,6 +170,7 @@ ls -lh "$OUT"
 # 校验归档可读，确保备份真的能用
 "$SYSRESTORE" -l "$OUT" | head -3
 echo "ARCHIVE_OK"
+{_VERIFY_ARCHIVE}
 {_PURGE}
 """
 
