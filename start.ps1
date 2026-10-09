@@ -147,9 +147,10 @@ if (-not $SkipInstall) {
 $busy = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 if ($busy) {
     $owner = $busy | Select-Object -First 1 -ExpandProperty OwningProcess
-    Fail "端口 $Port 已被 PID $owner 占用。"
-    Info "换端口：`$env:AIOPS_PORT=9000; .\start.ps1"
-    Info "或结束占用进程：Stop-Process -Id $owner -Force"
+    Fail "端口 $Port 已被 PID $owner 占用（多半是上一次没停干净）。"
+    Info "停止它：.\stop.cmd"
+    Info "换端口：`$env:AIOPS_PORT=9000; .\start.cmd"
+    Info "或手动结束：Stop-Process -Id $owner -Force"
     exit 1
 }
 
