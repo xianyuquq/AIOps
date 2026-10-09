@@ -16,24 +16,44 @@
 
 ### 1.0 最省事的方式（Windows）
 
-项目根目录提供了两个 PowerShell 脚本：
-
 ```powershell
 cd E:\Agent
 
-.\start.ps1          # 启动平台，浏览器打开 http://127.0.0.1:8848
-.\start-demo.ps1     # 演示模式：额外启动 4 个模拟节点，可直接体验多终端广播
+.\start.cmd           # ★ 推荐：一键启动，首次会自动装依赖并构建前端
+.\start-demo.ps1      # 演示模式：额外启动 4 个模拟节点，可直接体验多终端广播
 ```
 
-若提示「未对文件进行数字签名」或脚本被策略拦截：
+浏览器打开 http://127.0.0.1:8848 ，账号 `admin / admin123`。
+
+> **首次运行会自动补齐环境**：仓库里不含 `.venv`、`node_modules`、`frontend/dist`
+> （体积大且含本机状态），脚本会依次创建虚拟环境、安装后端依赖、构建前端。
+> 这一过程需要几分钟，之后启动就是秒开。
+
+#### 为什么推荐 `start.cmd` 而不是直接 `.\start.ps1`
+
+直接运行 `.ps1` 可能被 Windows 执行策略拦截：
+
+```
+无法加载文件 E:\Agent\start.ps1，未对文件进行数字签名。
+无法在当前系统上运行该脚本。
+```
+
+这是 Windows 对未签名脚本的默认安全行为，**不是脚本本身的问题**。
+`start.cmd` 只是为这一次启动加上 `-ExecutionPolicy Bypass`，
+**不修改系统的执行策略**，也不需要管理员权限。
+
+如果你更习惯直接用 PowerShell，等效命令是：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\start.ps1
 ```
 
-> 脚本已保存为 **UTF-8 with BOM**。这一点很重要：Windows PowerShell 5.1
-> 会把无 BOM 的 UTF-8 文件按 ANSI 解析，导致脚本内的中文注释乱码并引发语法错误。
-> 若你用编辑器修改脚本，请保持「UTF-8 带 BOM」保存。
+#### 两个脚本的编码要求（改脚本时务必注意）
+
+| 文件 | 必须保存为 | 原因 |
+|---|---|---|
+| `start.ps1` | **UTF-8 with BOM** | Windows PowerShell 5.1 会把无 BOM 的 UTF-8 按 ANSI 解析，中文注释乱码并引发语法错误 |
+| `start.cmd` | **纯 ASCII** | cmd.exe 按 ANSI 解析批处理，任何非 ASCII 字符（含中文注释）都会被拆成非法命令 |
 
 ### 1.1 手动启动后端
 
@@ -436,7 +456,8 @@ cd E:\Agent\backend
 
 ```
 aiops-platform/
-├── start.ps1                # 一键启动
+├── start.cmd                # 一键启动（推荐，绕过执行策略）
+├── start.ps1                # 实际逻辑（UTF-8 with BOM）
 ├── start-demo.ps1           # 演示模式（含 4 个模拟节点）
 ├── docs/
 │   ├── ARCHITECTURE.md      # 架构设计（含广播终端原理、数据模型、路线图）
