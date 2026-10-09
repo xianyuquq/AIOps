@@ -1,0 +1,40 @@
+# AI 智能运维平台 —— 后端依赖
+#
+# 安装：
+#     .\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+#
+# 说明：下面按「直接依赖」列出并给出可用的版本下限，
+# 让 pip 自行解析传递依赖，避免冻结整棵依赖树导致跨平台装不上。
+
+# ---- Web 框架 ----
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9        # 表单/文件上传
+pydantic>=2.7
+pydantic-settings>=2.2
+python-dotenv>=1.0
+
+# ---- 数据存储 ----
+SQLAlchemy>=2.0
+
+# ---- SSH 与终端 ----
+asyncssh>=2.14
+
+# ---- 认证与凭据加密 ----
+bcrypt>=4.1                    # 用户口令哈希（注意：不用 passlib，与 bcrypt 5.x 不兼容）
+python-jose[cryptography]>=3.3 # JWT
+cryptography>=42               # AES-256-GCM 信封加密
+
+# ---- 调度 ----
+APScheduler>=3.10
+
+# ---- HTTP 客户端 ----
+httpx>=0.27
+
+# ---- 数据库驱动 ----
+PyMySQL>=1.1                   # MySQL / MariaDB
+psycopg[binary]>=3.1           # PostgreSQL；人大金仓 Kingbase 协议兼容，同用此驱动
+oracledb>=2.0                  # Oracle（thin 模式，无需 Instant Client）
+
+# ---- 测试（可选）----
+pytest>=8.0
