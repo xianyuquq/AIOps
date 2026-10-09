@@ -466,11 +466,17 @@ def _fallback_answer(question: str) -> str:
         db.close()
 
 
-async def ask(question: str, max_iterations: int = 5) -> dict[str, Any]:
+async def ask(
+    question: str, max_iterations: int = 5, allow_tools: bool = True
+) -> dict[str, Any]:
     """运维问答主入口。
 
     采用 ReAct 风格的循环：模型决定调用工具 → 执行 → 结果回灌 → 继续，
     直到模型给出最终回答或达到迭代上限。
+
+    allow_tools=False 时不给模型任何工具（外部系统通过访问令牌调用时走这条路）。
+    这是一条**安全边界**：外部调用方不应能借平台之手去操作服务器，
+    因此宁可牺牲部分能力，也不开放工具。
     """
     provider = get_provider()
     if not provider.enabled:
@@ -486,6 +492,24 @@ async def ask(question: str, max_iterations: int = 5) -> dict[str, Any]:
         {"role": "user", "content": question},
     ]
     executed: list[dict[str, Any]] = []
+
+    # 不开放工具时一次问答即可，不进 ReAct 循环
+    if not allow_tools:
+        try:
+            result = await provider.chat(messages)
+        except LLMDisabled:
+            return {"answer": _fallback_answer(question), "tool_calls": [],
+                    "model": "", "enabled": False}
+        except Exception as exc:
+            logger.exception("外部 AI 调用失败")
+            return {"answer": f"AI 调用失败：{exc}", "tool_calls": [],
+                    "model": provider.model, "enabled": True}
+        return {
+            "answer": result.content or "（模型未返回内容）",
+            "tool_calls": [],
+            "model": result.model,
+            "enabled": True,
+        }
 
     for _ in range(max_iterations):
         try:

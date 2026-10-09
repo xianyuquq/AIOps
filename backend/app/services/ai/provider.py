@@ -57,10 +57,16 @@ class LLMProvider:
         self.api_key = api_key if api_key is not None else settings.llm_api_key
         self.model = model or settings.llm_model
         self.timeout = timeout or settings.llm_timeout
+        # 由界面设置决定的总开关；None 表示「界面没设过，看环境变量」
+        self.forced_enabled: bool | None = None
 
     @property
     def enabled(self) -> bool:
-        if not settings.llm_enabled:
+        # 界面上的开关优先；未由界面设置过时回退到环境变量
+        flag = getattr(self, "forced_enabled", None)
+        if flag is None:
+            flag = settings.llm_enabled
+        if not flag:
             return False
         # 本地 Ollama 等端点不需要 api_key
         if not self.api_key and "localhost" not in self.base_url and "127.0.0.1" not in self.base_url:
@@ -126,5 +132,39 @@ class LLMProvider:
         )
 
 
-def get_provider() -> LLMProvider:
-    return LLMProvider()
+def get_provider(db: Any = None) -> LLMProvider:
+    """构造 LLM 提供者。
+
+    配置来源优先级：数据库（界面里改的） > 环境变量 > 代码默认。
+    因此在界面上换模型 / 换网关后**立即生效、无需重启**——
+    这与「配置只在启动时读一次」的老做法不同。
+    """
+    if db is None:
+        from app.db import SessionLocal
+
+        session = SessionLocal()
+        try:
+            return _build_from_settings(session)
+        finally:
+            session.close()
+    return _build_from_settings(db)
+
+
+def _build_from_settings(db: Any) -> LLMProvider:
+    try:
+        from app.services.settings_store import get_llm_config
+
+        cfg = get_llm_config(db)
+    except Exception:
+        logger.exception("读取 LLM 配置失败，回退到环境变量")
+        return LLMProvider()
+
+    provider = LLMProvider(
+        base_url=cfg.get("llm_base_url"),
+        api_key=cfg.get("llm_api_key") or None,
+        model=cfg.get("llm_model"),
+        timeout=cfg.get("llm_timeout"),
+    )
+    # 开关以数据库为准（环境变量只作为初始值）
+    provider.forced_enabled = bool(cfg.get("llm_enabled"))
+    return provider

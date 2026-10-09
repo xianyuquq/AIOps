@@ -239,13 +239,22 @@ app.add_middleware(
 
 # --------------------------------------------------------------------------- 路由
 
-from app.api import alerts_ai, auth, metrics, servers  # noqa: E402
+from app.api import (  # noqa: E402
+    alerts_ai,
+    auth,
+    integration,
+    metrics,
+    servers,
+    settings_api,
+)
 from app.ws import terminal_ws  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(servers.router)
 app.include_router(metrics.router)
 app.include_router(alerts_ai.router)
+app.include_router(settings_api.router, prefix="/api/v1")
+app.include_router(integration.router, prefix="/api/v1")
 app.include_router(terminal_ws.router)
 
 

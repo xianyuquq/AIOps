@@ -25,6 +25,7 @@ __pycache__/
 *.py[cod]
 aiops_pytest_*/
 aiops_mock_sftp_*/
+aiops_mock_sftp/
 *.db
 *.db-shm
 *.db-wal

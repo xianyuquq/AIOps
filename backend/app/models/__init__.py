@@ -19,6 +19,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -388,3 +389,62 @@ class BackupRun(Base):
     output: Mapped[str] = mapped_column(Text, default="")
     error: Mapped[str] = mapped_column(Text, default="")
     trigger: Mapped[str] = mapped_column(String(16), default="manual")  # manual | schedule
+
+
+# ============================================================ 运行时设置
+
+
+class AppSetting(Base):
+    """运行时可改的平台设置（键值对）。
+
+    为什么需要：像 LLM 的 base_url / api_key / model 这类配置原先只能通过
+    环境变量传入，改一次就要重启服务。运维现场换模型、换网关、换密钥是常事，
+    因此改为可在界面里修改并持久化。
+
+    取值优先级：**数据库 > 环境变量 > 代码默认值**。
+    这样既能用界面覆盖，也保留了「用环境变量做初始值 / 做 CI 注入」的能力。
+    """
+
+    __tablename__ = "app_setting"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    # 敏感值（如 API Key）单独存放密文与 nonce，绝不存明文
+    secret_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary)
+    secret_nonce: Mapped[bytes | None] = mapped_column(LargeBinary)
+    # 密文无法直接判断「用户是否填过」，因此单独记一个标志
+    has_secret: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+    updated_by: Mapped[str] = mapped_column(String(64), default="")
+
+
+# ============================================================ 对外集成
+
+
+class ApiToken(Base):
+    """供外部系统调用平台能力的访问令牌。
+
+    设计要点：
+    - 只存**哈希**（与用户口令同样处理），数据库泄露也无法反推出令牌；
+    - 保留可读前缀，便于在界面上辨认令牌；
+    - 记录 last_used_at / call_count，便于判断哪条还在用、哪条可以吊销。
+    """
+
+    __tablename__ = "api_token"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64))
+    # 形如 aiops_ab12cd34…，仅用于展示
+    prefix: Mapped[str] = mapped_column(String(24), index=True)
+    token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # ai  —— 可调用 AI 能力
+    # read—— 只读，不能触发任何动作
+    scope: Mapped[str] = mapped_column(String(32), default="ai")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    last_used_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
+    call_count: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
