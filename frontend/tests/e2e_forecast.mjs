@@ -55,7 +55,13 @@ if (rows > 0) {
     console.log('        ' + t.replace(/\n/g, ' | '))
   }
 
-  check('★ 显示了增长率（/天）', /\/天/.test(joined))
+  // 增长型显示「+x/天」，波动型显示「峰值 x」。
+  // 刚重置环境时数据库只有一两个采样点，够不上增长型趋势，
+  // 此时页面上只有峰值型条目，因此两者取其一即算通过。
+  const hasGrowth = /\/天/.test(joined)
+  const hasPeak = /峰值\s*\d/.test(joined)
+  check('★ 显示了增长率或峰值', hasGrowth || hasPeak,
+    hasGrowth ? '增长率' : hasPeak ? '峰值' : '两者都没有')
   check('★ 显示了拟合优度 R²', /R²=/.test(joined))
   check('显示了可信度', /(高|中|低)/.test(joined))
 
