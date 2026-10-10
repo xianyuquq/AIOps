@@ -90,21 +90,68 @@ Invoke-RestMethod "http://127.0.0.1:8848/api/v1/databases/2/collect" -Method Pos
 
 ## 三、用 DBeaver 连接
 
-1. **新建连接** → 选 `PostgreSQL`（或 `MySQL`）
-2. 填入上表的 主机 / 端口 / 数据库 / 用户名 / 密码
-3. **首次连接会提示下载 JDBC 驱动** —— 这一步需要联网。
-   本机 Docker Hub 直连不通、要走代理，DBeaver 下载驱动**可能同样失败**。
-   若卡在这里，两个办法：
-   - 在 DBeaver 的 `连接设置 → 驱动属性` 里配置代理（本机系统代理是 `127.0.0.1:7892`）
-   - 或者直接用手工下载的 jar：`驱动编辑器 → 库 → 添加文件`
-4. PostgreSQL 若报 `The server does not support SSL`，在
-   `连接设置 → SSL` 里取消勾选 `Use SSL`。
+本机 DBeaver 的位置（免安装版，非 Program Files）：
 
-> **连不上时先排除"容器是不是根本没跑"**：
+```
+E:\DBeaver\dbeaver-ce-26.2.2-windows-x86_64\dbeaver\dbeaver.exe
+```
+
+连接参数（同上表）：
+
+| 字段 | PostgreSQL | MySQL |
+|---|---|---|
+| 驱动 | PostgreSQL | MySQL |
+| Host | `127.0.0.1` | `127.0.0.1` |
+| Port | `5432` | `3306` |
+| Database | `testdb` | `testdb` |
+| Username | `postgres` | `root` |
+| Password | `Test1234` | `Test1234` |
+
+### 连不上时，先查这一条：驱动下载
+
+DBeaver 首次连接某个数据库时会去下载 JDBC 驱动。**本机驱动缓存是空的**
+（`%APPDATA%\DBeaverData\drivers` 下 0 个文件），所以第一次连接必然要联网下载。
+
+而本机直连外网不通，**必须走系统代理 `127.0.0.1:7892`**。
+DBeaver 默认不读系统代理，因此会卡在驱动下载上，表现为"连接失败"，
+很容易误以为是口令错了。
+
+**解决办法（任选其一，都不需要安装任何东西）：**
+
+**办法 A：给 DBeaver 配代理**
+
+`窗口(Window) → 首选项(Preferences) → 通用(General) → 网络连接(Network Connections)`
+→ Active Provider 选 `Manual` → 在 HTTP / HTTPS 两行都填：
+
+```
+Host: 127.0.0.1    Port: 7892
+```
+
+确定后**重新建连接**（或右键已有连接 → 编辑连接 → 测试连接），
+DBeaver 会重新触发驱动下载，这次能成功。
+
+若菜单里没有该项，也可在 `首选项 → 连接 → 驱动 → Maven` 里找代理设置。
+
+**办法 B：手工放驱动 jar**
+
+用浏览器（浏览器走系统代理，是通的）下载对应 jar：
+
+- PostgreSQL：`https://jdbc.postgresql.org/download/postgresql-42.7.4.jar`
+- MySQL：`https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/9.1.0/mysql-connector-j-9.1.0.jar`
+
+然后 `数据库 → 驱动管理器 → 选中 PostgreSQL/MySQL → 编辑 → 库 → 添加文件`，
+指向下载的 jar。之后建连接就不再联网。
+
+### 其他常见卡点
+
+- PostgreSQL 报 `The server does not support SSL`：
+  `连接设置 → SSL` 里取消勾选 `Use SSL`。
+- 端口连不上：**先确认容器真的在跑**（见下），
+  容器处于 `Exited` / `Created` 时端口不会监听。
+
 > ```powershell
 > docker ps -a --filter "name=aiops-"
 > ```
-> 容器处于 `Exited` / `Created` 状态时，端口不会监听，DBeaver 自然连不上。
 
 ---
 
