@@ -535,6 +535,7 @@ aiops-platform/
 ├── docs/
 │   ├── ARCHITECTURE.md      # 架构设计（含广播终端原理、数据模型、路线图）
 │   ├── VERIFICATION.md      # 验证方法与复现步骤
+│   ├── TEST-ENV.md          # 本地测试库连接方式与口令（DBeaver / PowerShell）
 │   ├── ENVIRONMENT-ISSUE.md # 环境问题诊断记录
 │   └── screenshots/         # 验证截图
 ├── backend/
@@ -582,6 +583,8 @@ aiops-platform/
 ---
 
 ## 8. 相关文档
+
+- [测试环境说明](docs/TEST-ENV.md) —— 本地 Docker 测试库（PostgreSQL / MySQL）的**连接方式、口令、DBeaver 配置、重建步骤**
 
 - [架构设计](docs/ARCHITECTURE.md) —— 完整设计、数据模型、技术选型、实施路线图
 - [验证报告](docs/VERIFICATION.md) —— 如何复现全部验证
