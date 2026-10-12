@@ -155,23 +155,86 @@ DBeaver 会重新触发驱动下载，这次能成功。
 
 ---
 
-## 四、重建容器（万一被删了）
+## 四、容器的创建与管理（用 compose）
+
+这两个容器由 **docker compose 项目 `aiops-test-db`** 管理，编排文件在仓库里：
+
+```
+E:\Agent\deploy\test-db\docker-compose.yml
+```
+
+### 为什么从裸 docker run 改成 compose
+
+早先用裸 `docker run` 建，有三个后果：
+
+| 问题 | 后果 |
+|---|---|
+| 没有 `restart` 策略 | **开机 / Docker 重启后容器不会自己起来**，在只显示运行中容器的列表里就像"消失了" |
+| 没有命名数据卷 | 容器一旦被删，**数据全丢** |
+| 不在 compose 项目下 | 容器是散着的，不好统一启停 |
+
+现在三点都解决了：
+
+```
+aiops-pg      RestartPolicy=unless-stopped   Mounts=aiops-pg-data
+aiops-mysql   RestartPolicy=unless-stopped   Mounts=aiops-mysql-data
+```
+
+- **开机自启**：`unless-stopped` —— 除非你手动停过，否则 Docker 启动后自动拉起
+- **数据持久化**：数据在命名卷 `aiops-pg-data` / `aiops-mysql-data` 里，
+  即使 `docker compose down` 再 `up`，数据依然在
+- **Docker Desktop 里可直接启停**：项目名 `aiops-test-db`，两个容器归在一起
+
+> 已实测：容器重启前后 `shop_orders` 均为 20000 行。
+
+### 常用命令
 
 ```powershell
-docker rm -f aiops-pg aiops-mysql
+cd E:\Agent\deploy\test-db
 
-docker run -d --name aiops-pg `
-  -e POSTGRES_PASSWORD=Test1234 -e POSTGRES_DB=testdb `
-  -p 5432:5432 docker.m.daocloud.io/library/postgres:16-alpine
+docker compose up -d        # 启动（首次会创建容器与数据卷）
+docker compose ps           # 看状态
+docker compose stop         # 停止（保留容器与数据）
+docker compose start        # 再启动
+docker compose down         # 停止并移除容器，数据卷保留
+docker compose down -v      # ⚠️ 连数据卷一起删，数据全丢
+docker compose logs -f      # 看日志
+```
 
-docker run -d --name aiops-mysql `
-  -e MYSQL_ROOT_PASSWORD=Test1234 -e MYSQL_DATABASE=testdb `
-  -p 3306:3306 docker.m.daocloud.io/library/mysql:8
+也可以直接在 **Docker Desktop 的 Containers 页面**点按钮启停。
 
-# 灌入测试数据（各 2000/500/20000 行）
+### 灌入测试数据
+
+```powershell
 cd E:\Agent\backend
-$env:AIOPS_TEST_KINGBASE_PASSWORD = "你的金仓口令"   # 金仓部分需要，连不上会跳过
+$env:AIOPS_TEST_KINGBASE_PASSWORD = "你的金仓口令"   # 金仓部分需要；连不上会自动跳过
 ..\.venv\Scripts\python.exe tests\seed_test_data.py --once
+```
+
+> `seed_test_data.py` 目前只覆盖 **Kingbase 与 MySQL**。
+> PostgreSQL 用专门的脚本（同样是幂等的，重复运行不会重复插入）：
+>
+> ```powershell
+> cd E:\Agent\backend
+> ..\.venv\Scripts\python.exe tests\seed_postgres.py
+> ```
+>
+> 输出示例：
+> ```
+> PostgreSQL testdb: shop_users=2,000  shop_products=500  shop_orders=20,000
+> ```
+
+### 若容器彻底不见了
+
+```powershell
+cd E:\Agent\deploy\test-db
+docker compose up -d
+```
+
+只要数据卷还在，数据就会回来：
+
+```powershell
+docker volume ls --filter "name=aiops"
 ```
 
 > `aiops-mysql` 有时初次 `docker run -d` 会停在 `Created` 状态不自动启动，

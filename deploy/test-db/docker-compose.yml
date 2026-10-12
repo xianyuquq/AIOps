@@ -1,0 +1,77 @@
+# AI 智能运维平台 —— 本地测试数据库
+#
+# 用途：为数据库监控与备份容灾的验证提供两个真实数据库。
+#
+# 为什么用 compose 而不是 docker run：
+#   - 出现在 Docker Desktop 的容器列表里，有分组、可直接点启动/停止
+#   - restart: unless-stopped —— Docker 启动后自动拉起，开机即用
+#   - 命名数据卷 —— 数据存在卷里，容器重建也不丢
+#   这三点用裸 docker run 都要额外记参数，容易漏。
+#
+# 用法：
+#   cd deploy\test-db
+#   docker compose up -d          启动（首次会创建容器与数据卷）
+#   docker compose down           停止并移除容器（数据卷保留）
+#   docker compose down -v        连数据卷一起删（数据全丢，慎用）
+#
+# 灌入测试数据：
+#   cd E:\Agent\backend
+#   ..\.venv\Scripts\python.exe tests\seed_test_data.py --once
+#
+# 连接方式与口令见 docs/TEST-ENV.md。
+
+name: aiops-test-db
+
+services:
+  postgres:
+    # 镜像名带 docker.m.daocloud.io 前缀：本机直连 Docker Hub 会 IPv6 超时，
+    # 当初是经该镜像源拉取的，本地 tag 就是这个完整名字。
+    # 若你的网络能直连 Docker Hub，可改成 postgres:16-alpine 并重新 pull。
+    image: docker.m.daocloud.io/library/postgres:16-alpine
+    container_name: aiops-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Test1234
+      POSTGRES_DB: testdb
+      TZ: Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d testdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  mysql:
+    image: docker.m.daocloud.io/library/mysql:8
+    container_name: aiops-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: Test1234
+      MYSQL_DATABASE: testdb
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    # 测试数据里有中文，显式指定字符集，避免乱码
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      # 用 $$ 转义，让变量在容器内展开，避免口令在 compose 文件里出现两次
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  pg-data:
+    name: aiops-pg-data
+  mysql-data:
+    name: aiops-mysql-data
